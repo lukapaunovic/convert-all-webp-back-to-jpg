@@ -12,6 +12,11 @@ else
 fi
 export IM_CMD
 
+if ! $IM_CMD -version | grep -qi webp; then
+  echo "Error: ImageMagick does not support WebP." >&2
+  exit 1
+fi
+
 # Number of parallel processes
 nproc_cmd=$(nproc 2>/dev/null || echo 4)
 
@@ -56,56 +61,38 @@ export -f format_size
 
 # Conversion
 find . -type f -iname "*.webp" -print0 \
-| xargs -0 -n 1 -P "$nproc_cmd" bash -c '
+| xargs -0 -n 1 -P "$nproc_cmd" -I {} bash -c '
   in="$1"
-  # Just remove .webp extension - DO NOT ADD ANYTHING
   out="${in%.[Ww][Ee][Bb][Pp]}.jpg"
   basename="${in##*/}"
   timestamp=$(date "+%Y-%m-%d %H:%M:%S")
-  
-  # Skip if output file already exists
+
   if [ -f "$out" ]; then
-    msg="⊘ [$timestamp] Skipped: $basename (already exists $(basename "$out"))"
-    echo "$msg" | tee -a "$LOG_FILE" >&2
+    echo "⊘ [$timestamp] Skipped: $basename (already exists $(basename "$out"))" | tee -a "$LOG_FILE" >&2
     exit 0
   fi
-  
-  # Conversion with detailed logging
+
   echo "→ [$timestamp] Converting: $in" | tee -a "$LOG_FILE"
-  
-  # Try conversion and capture errors
+
   if error_output=$($IM_CMD "$in" -strip -quality 90 "jpeg:$out" 2>&1); then
-    # Use stat for faster file size reading
     if command -v stat >/dev/null 2>&1; then
-      # GNU stat
       if stat --version >/dev/null 2>&1; then
-        size_in_bytes=$(stat -c%s "$in")
-        size_out_bytes=$(stat -c%s "$out")
-      # BSD stat (macOS)
+        size_in_bytes=$(stat -c%s "$in");  size_out_bytes=$(stat -c%s "$out")
       else
-        size_in_bytes=$(stat -f%z "$in")
-        size_out_bytes=$(stat -f%z "$out")
+        size_in_bytes=$(stat -f%z "$in"); size_out_bytes=$(stat -f%z "$out")
       fi
     else
-      # Fallback to du -b for exact bytes
-      size_in_bytes=$(du -b "$in" | cut -f1)
-      size_out_bytes=$(du -b "$out" | cut -f1)
+      size_in_bytes=$(du -b "$in" | cut -f1); size_out_bytes=$(du -b "$out" | cut -f1)
     fi
-    
-    # Format sizes using format_size
-    size_in=$(format_size "$size_in_bytes")
-    size_out=$(format_size "$size_out_bytes")
-    
-    msg="✓ [$timestamp] Success: $basename ($size_in → $size_out)"
-    echo "$msg" | tee -a "$LOG_FILE"
+    size_in=$(format_size "$size_in_bytes"); size_out=$(format_size "$size_out_bytes")
+    echo "✓ [$timestamp] Success: $basename ($size_in → $size_out)" | tee -a "$LOG_FILE"
   else
-    # Print ImageMagick error
-    msg="✗ [$timestamp] ERROR during conversion: $in"
-    echo "$msg" | tee -a "$LOG_FILE" >&2
+    echo "✗ [$timestamp] ERROR during conversion: $in" | tee -a "$LOG_FILE" >&2
     echo "   Details: $error_output" | tee -a "$LOG_FILE" >&2
     exit 1
   fi
-' bash
+' _ {}
+
 
 echo ""
 echo "---" | tee -a "$LOG_FILE"
