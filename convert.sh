@@ -450,6 +450,11 @@ convert_file() {
 
 export -f convert_file is_animated_webp has_alpha can_read_image is_valid_image decide_target_ext
 
+# --- Export for subshells (xargs/bash -c) ---
+export QUALITY IM_CMD EMOJI DELETE_ORIGINAL PROGRESS_MODE RECURSIVE
+[ "${use_simple_progress:-0}" = "1" ] && export PROGRESS_FILE PROGRESS_LOCK HAS_FLOCK
+export total LOG_FILE FAIL_FILE
+
 # ------------------------------- Run -----------------------------------------
 echo "Found $total .webp files. Parallel: $nproc_cmd"
 echo "Using: $IM_CMD | QUALITY=$QUALITY | DELETE_ORIGINAL=$DELETE_ORIGINAL | EMOJI=$EMOJI"
