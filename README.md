@@ -45,7 +45,12 @@ git clone https://github.com/lukapaunovic/convert-all-webp-back-to-jpg.git
 cd convert-all-webp-back-to-jpg
 chmod +x convert.sh
 
+Edit convert.sh with desired variables.
+
+Run ./convert.sh
+
 # Convert .jpg.webp, .png.webp, and .jpg to .webp in database to match scripts result
+# Must be run as site user or use sudo -H -uwww-data in front (replace www-data with web files user)
 
 wp search-replace --regex '(?i)\.png\.webp' '.jpg' --all-tables --report-changed-only
 wp search-replace --regex '(?i)\.jpg\.webp' '.jpg' --all-tables --report-changed-only
