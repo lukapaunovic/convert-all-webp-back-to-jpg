@@ -1,6 +1,6 @@
 WebP to GIF/PNG/JPEG Converter Script
 
-This repository provides a robust Bash script for converting .webp images to their appropriate formats: GIF (for animations or *.gif.webp), PNG (for *.png.webp or images with transparency), or JPEG (for all others). It is designed for WordPress and other CMS setups where .webp uploads cause compatibility or CDN issues.
+This repository provides a robust Bash script for converting .webp images to their appropriate formats: GIF (for *.gif.webp), JPG (for *.png.webp), and JPG (for all others). It is designed for WordPress and other CMS setups where .webp uploads cause compatibility or CDN issues.
 
 Why You Should Avoid Uploading .webp Files
 -----------------------------------------
@@ -103,11 +103,10 @@ WordPress Database Update
 
 To update file references in the WordPress database to match the script's output, run the following wp-cli commands as the site user (or use sudo -H -u www-data if needed, replacing www-data with your web server user):
 ```console
-  wp search-replace --regex '(?i)\.gif\.webp' '.gif' --all-tables --report-changed-only
-  wp search-replace --regex '(?i)\.png\.webp' '.png' --all-tables --report-changed-only
-  wp search-replace --regex '(?i)\.jpg\.webp' '.jpg' --all-tables --report-changed-only
-  wp search-replace --regex '(?i)\.jpeg\.webp' '.jpg' --all-tables --report-changed-only
-  wp search-replace --regex '(?i)\.webp' '.jpg' --all-tables --report-changed-only
+wp search-replace --regex '(?i)\.gif\.webp\b'  '.gif' --all-tables --report-changed-only
+wp search-replace --regex '(?i)\.jpe?g\.webp\b' '.jpg' --all-tables --report-changed-only
+wp search-replace --regex '(?i)\.png\.webp\b'  '.jpg' --all-tables --report-changed-only
+wp search-replace --regex '(?i)\.webp\b'       '.jpg' --all-tables --report-changed-only
 ```
 These commands replace case-insensitive .gif.webp, .png.webp, .jpg.webp, .jpeg.webp, and .webp extensions with .gif, .png, or .jpg in the database.
 
