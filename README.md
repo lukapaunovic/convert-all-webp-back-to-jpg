@@ -44,8 +44,7 @@ cd wp-content/uploads
 git clone https://github.com/lukapaunovic/convert-all-webp-back-to-jpg.git
 chmod +x convert.sh``` 
 
-## Convert .jpg.webp, .png.webp, and .jpg to .webp in database to match scripts result
-```bash
+# Convert .jpg.webp, .png.webp, and .jpg to .webp in database to match scripts result
 
 wp search-replace --regex '(?i)\.png\.webp' '.jpg' --all-tables --report-changed-only
 wp search-replace --regex '(?i)\.jpg\.webp' '.jpg' --all-tables --report-changed-only
