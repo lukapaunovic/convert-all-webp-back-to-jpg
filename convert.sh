@@ -342,12 +342,15 @@ convert_file() {
     echo 1 >>"$FAIL_FILE"; return 1
   fi
 
-  # 2) Odredi TARGET EXT prvo (sa fallback-om)
+  # 2) Odredi TARGET EXT prvo (sa fallback-om) + hardening
   local target_ext; target_ext="$(decide_target_ext "$in")"
-  case "$target_ext" in
-    gif|png|jpg) : ;;
-    ""|*) target_ext="jpg" ;;  # Fallback; nikad bez ekstenzije
-  esac
+
+  # Skini whitespace i spusti na mala slova (za svaki slučaj)
+  target_ext="${target_ext//[[:space:]]/}"
+  target_ext="${target_ext,,}"
+
+  # Ako nije striktno gif/png/jpg → podrazumevano jpg
+  [[ "$target_ext" =~ ^(gif|png|jpg)$ ]] || target_ext="jpg"
 
   # 3) Izgradi izlaz bez seckanja putanje
   local stem="${in%.[Ww][Ee][Bb][Pp]}"     # /a/b/photo.gif.webp -> /a/b/photo.gif
