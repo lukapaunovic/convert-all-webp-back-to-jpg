@@ -47,7 +47,8 @@ chmod +x convert.sh
 
 #Edit convert.sh with desired variables.
 
-Run ./convert.sh
+#Run
+./convert.sh
 
 # Convert .jpg.webp, .png.webp, and .jpg to .webp in database to match scripts result
 # Must be run as site user or use sudo -H -uwww-data in front (replace www-data with web files user)
