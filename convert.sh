@@ -10,7 +10,7 @@ set -euo pipefail
 
 # --------------------------- Config (overridable) ----------------------------
 : "${QUALITY:=90}"                         # JPEG quality (1-100)
-: "${PARALLEL:=8}"                          # force parallelism, e.g. PARALLEL=8
+: "${PARALLEL:=}"                          # force parallelism, e.g. PARALLEL=8
 : "${DELETE_ORIGINAL:=0}"                  # 1 = delete .webp after success
 : "${DRY_RUN:=0}"                          # 1 = show what would be converted
 : "${DRY_RUN_LIMIT:=20}"                   # max files to show in dry run
@@ -404,8 +404,9 @@ convert_file() {
   fi
 
   # Do the conversion; capture stderr
+  # Note: some ImageMagick versions are picky about argument order
   local error_output
-  if error_output=$("$IM_CMD" "$in" -strip -quality "$QUALITY" "jpeg:$out" 2>&1); then
+  if error_output=$("$IM_CMD" "$in" -quality "${QUALITY}" -strip "$out" 2>&1); then
     # Ensure output was actually created
     if [ ! -f "$out" ]; then
       echo "✗ [$stamp] ERROR: $name_in → $name_out (no output file created)" | tee -a "$LOG_FILE" >&2
