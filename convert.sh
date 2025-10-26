@@ -14,6 +14,7 @@ set -euo pipefail
 #   RECURSIVE=1           # 0 = current dir only
 #   PROGRESS_MODE=auto    # auto|pv|simple|none
 #   IM_CMD=magick         # Override ImageMagick command
+#   EMOJI=1               # 1 = emoji in logs, 0 = plain ASCII
 # =============================================================================
 
 # --------------------------- Config (overridable) ----------------------------
@@ -25,7 +26,47 @@ set -euo pipefail
 : "${RECURSIVE:=1}"
 : "${MAX_PARALLEL:=64}"
 : "${PROGRESS_MODE:=auto}"
+: "${EMOJI:=1}"          # 1 = emoji u logu, 0 = čisti ASCII
 # -----------------------------------------------------------------------------
+
+# --------------------------- Log simboli -------------------------------------
+if [ "$EMOJI" = "1" ]; then
+  S_OK="✓"; S_SKIP="⊘"; S_ERR="✗"; S_ARROW="→"; S_BIN="🗑️ "
+else
+  S_OK="[OK]"; S_SKIP="[SKIP]"; S_ERR="[ERR]"; S_ARROW="->"; S_BIN="[DEL] "
+fi
+
+abspath() {
+  local f="$1" d b out
+  b="$(basename -- "$f")"
+  d="$(dirname -- "$f")"
+  if command -v realpath >/dev/null 2>&1; then
+    out=$(realpath -m -- "$f" 2>/dev/null) || {
+      if [ -d "$d" ]; then
+        out=$(printf '%s/%s' "$(cd "$d" && pwd -P)" "$b")
+      else
+        case "$d" in
+          /*) out="$d/$b" ;;
+          *)  out="$PWD/$d/$b" ;;
+        esac
+      fi
+    }
+  elif command -v readlink >/dev/null 2>&1; then
+    out=$(readlink -f -- "$f" 2>/dev/null) || {
+      case "$d" in
+        /*) out="$d/$b" ;;
+        *)  out="$PWD/$d/$b" ;;
+      esac
+    }
+  else
+    case "$d" in
+      /*) out="$d/$b" ;;
+      *)  out="$PWD/$d/$b" ;;
+    esac
+  fi
+  echo "$out" | tr -s '/'
+}
+export -f abspath
 
 show_help() {
   cat <<'EOF'
@@ -45,15 +86,16 @@ Options:
   --dry-run-limit NUM     Limit dry-run listing (default 20)
   --no-recursive          Do not descend into subdirectories
   --progress MODE         auto|pv|simple|none (default auto)
+  --no-emoji              Use plain ASCII instead of emoji in logs
 
 Environment:
   QUALITY, PARALLEL, DELETE_ORIGINAL, DRY_RUN, DRY_RUN_LIMIT,
-  RECURSIVE, PROGRESS_MODE, IM_CMD
+  RECURSIVE, PROGRESS_MODE, EMOJI
 
 Examples:
   ./convert.sh
   QUALITY=95 ./convert.sh /path/to/images
-  DELETE_ORIGINAL=1 ./convert.sh --progress pv
+  DELETE_ORIGINAL=1 ./convert.sh --progress pv --no-emoji
 EOF
   exit 0
 }
@@ -70,6 +112,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run-limit) DRY_RUN_LIMIT="$2"; shift 2 ;;
     --no-recursive) RECURSIVE=0; shift ;;
     --progress) PROGRESS_MODE="$2"; shift 2 ;;
+    --no-emoji) EMOJI=0; shift ;;
     -*) echo "Unknown option: $1" >&2; exit 1 ;;
     *) TARGET_DIR="$1"; shift ;;
   esac
@@ -141,7 +184,13 @@ if [ "$DRY_RUN" = "1" ]; then
   echo "Would process $total *.webp files (parallel: $nproc_cmd)"
   echo "Delete original: $DELETE_ORIGINAL"
   echo "First $DRY_RUN_LIMIT files:"
-  find . $find_depth -type f -iname '*.webp' -print | head -"$DRY_RUN_LIMIT"
+  c=0
+  find . $find_depth -type f -iname '*.webp' -print0 | \
+  while IFS= read -r -d '' f; do
+    printf '%s\n' "$(abspath "$f")"
+    c=$((c+1))
+    [ "$c" -ge "$DRY_RUN_LIMIT" ] && break
+  done
   [ "$total" -gt "$DRY_RUN_LIMIT" ] && echo "... and $((total - DRY_RUN_LIMIT)) more"
   exit 0
 fi
@@ -156,7 +205,7 @@ fi
 
 # ----------------------------- Logging ---------------------------------------
 ts="$(date +%Y%m%d_%H%M%S)"
-LOG_FILE="$(mktemp "webp_convert_${ts}_XXXX.log")"
+LOG_FILE="$(mktemp "webp_convert_${ts}_XXXXXX.log")"
 export LOG_FILE
 {
   echo "=== WebP → (GIF/PNG/JPEG) ==="
@@ -167,6 +216,7 @@ export LOG_FILE
   echo "Quality: $QUALITY"
   echo "Delete original: $DELETE_ORIGINAL"
   echo "Recursive: $RECURSIVE"
+  echo "Emoji: $EMOJI"
   echo "---"
 } >>"$LOG_FILE"
 echo "Log file: $LOG_FILE"
@@ -206,13 +256,15 @@ export -f now filesize_bytes format_size
 
 # Progress (simple)
 if [ "$use_simple_progress" = "1" ]; then
-  PROGRESS_FILE="$(mktemp)"; PROGRESS_LOCK="$(mktemp)"
+  PROGRESS_FILE="$(mktemp "webp_convert_progress_${ts}_XXXXXX")"
+  PROGRESS_LOCK="$(mktemp "webp_convert_lock_${ts}_XXXXXX")"
   echo "0" >"$PROGRESS_FILE"; HAS_FLOCK=0
   command -v flock >/dev/null 2>&1 && HAS_FLOCK=1
   export PROGRESS_FILE PROGRESS_LOCK HAS_FLOCK total
 fi
 
-FAIL_FILE="$(mktemp)"; export FAIL_FILE
+FAIL_FILE="$(mktemp "webp_convert_fail_${ts}_XXXXXX")"
+export FAIL_FILE
 cleanup() {
   local ec=$?
   rm -f "$FAIL_FILE" ${PROGRESS_FILE:-} ${PROGRESS_LOCK:-}
@@ -227,6 +279,21 @@ has_alpha() {
   [[ "$ch" =~ a ]] && echo "yes" || echo "no"
 }
 
+can_read_image() {
+  local in="$1"
+  "$IM_CMD" -ping "$in" -format "%wx%h" info: >/dev/null 2>&1
+}
+
+is_valid_image() {
+  local f="$1" ext="$2"
+  [ -s "$f" ] || return 1
+  if [ "$ext" = "gif" ]; then
+    "$IM_CMD" "$f" -format "%n" info: >/dev/null 2>&1
+  else
+    "$IM_CMD" -ping "$f" -format "%wx%h" info: >/dev/null 2>&1
+  fi
+}
+
 is_animated_webp() {
   local in="$1"
   local IDENTIFY_CMD=""
@@ -235,13 +302,11 @@ is_animated_webp() {
   elif command -v identify >/dev/null 2>&1; then
     IDENTIFY_CMD="identify"
   fi
-
   if [ -n "$IDENTIFY_CMD" ]; then
     local frames
     frames=$($IDENTIFY_CMD -format "%n\n" -- "$in" 2>/dev/null | head -n1 || echo 1)
     [ "${frames:-1}" -ge 2 ] && echo "yes" || echo "no"
   else
-    # Fallback via ImageMagick formatter (slower, but works without `identify`)
     local frames
     frames=$("$IM_CMD" "$in" -format "%n\n" info: 2>/dev/null | head -n1 || echo 1)
     [ "${frames:-1}" -ge 2 ] && echo "yes" || echo "no"
@@ -253,7 +318,6 @@ decide_target_ext() {
   local stem="${in%.[Ww][Ee][Bb][Pp]}"   # e.g. photo.gif.webp -> photo.gif
   local ext_lc="${stem##*.}"; ext_lc="$(printf '%s' "$ext_lc" | tr '[:upper:]' '[:lower:]')"
 
- ext="${in##*.}"
   if [ "$(is_animated_webp "$in")" = "yes" ] || [ "$ext_lc" = "gif" ]; then
     echo "gif"
   elif [ "$ext_lc" = "png" ] || [ "$(has_alpha "$in")" = "yes" ]; then
@@ -266,16 +330,27 @@ decide_target_ext() {
 # ----------------------------- Conversion ------------------------------------
 convert_file() {
   local in="$1"
-  local stem="${in%.[Ww][Ee][Bb][Pp]}"     # name.gif.webp -> name.gif
-  local base="${stem%.*}"                  # name.gif -> name
-  local target_ext; target_ext="$(decide_target_ext "$in")"
-  local out="${base}.${target_ext}"
-  local name_in="${in##*/}"; local name_out="${out##*/}"
   local stamp; stamp="$(now)"
-
-  # Skip if already exists
-  if [ -f "$out" ]; then
-    echo "⊘ [$stamp] Skipped: $name_in (exists as $name_out)" | tee -a "$LOG_FILE" >&2
+  local stem="${in%.[Ww][Ee][Bb][Pp]}"     # e.g. photo.webp -> photo
+  local base="${stem%.*}"                  # e.g. photo.gif -> photo
+  if ! can_read_image "$in"; then
+    echo "$S_ERR [$stamp] ERROR: unreadable or corrupt input: $in" | tee -a "$LOG_FILE" >&2
+    echo 1 >>"$FAIL_FILE"; return 1
+  fi
+  local target_ext; target_ext="$(decide_target_ext "$in")"
+  if [ -z "$target_ext" ] || [[ ! "$target_ext" =~ ^(gif|png|jpg)$ ]]; then
+    echo "$S_ERR [$stamp] ERROR: Invalid target extension for $in (got $target_ext)" | tee -a "$LOG_FILE" >&2
+    echo 1 >>"$FAIL_FILE"; return 1
+  fi
+  local out="${base}.${target_ext}"
+  if [ -z "$out" ] || [ "$out" = ".${target_ext}" ]; then
+    echo "$S_ERR [$stamp] ERROR: Invalid output filename for $in (got $out)" | tee -a "$LOG_FILE" >&2
+    echo 1 >>"$FAIL_FILE"; return 1
+  fi
+  local in_abs out_abs
+  in_abs="$in"; out_abs="$(abspath "$out")"
+  if [ -f "$out" ] || [ -d "$out" ]; then
+    echo "$S_SKIP [$stamp] Skipped: $in_abs (exists as $out_abs)" | tee -a "$LOG_FILE" >&2
     if [ "${use_simple_progress:-0}" = "1" ]; then
       if [ "${HAS_FLOCK}" = "1" ]; then
         flock "$PROGRESS_LOCK" bash -c 'echo $(($(cat "$PROGRESS_FILE")+1)) >"$PROGRESS_FILE"'
@@ -285,8 +360,6 @@ convert_file() {
     fi
     return 0
   fi
-
-  # Progress line
   if [ "${use_simple_progress:-0}" = "1" ]; then
     local current
     if [ "${HAS_FLOCK}" = "1" ]; then
@@ -294,67 +367,35 @@ convert_file() {
     else
       current=$(($(cat "$PROGRESS_FILE")+1)); echo "$current" >"$PROGRESS_FILE" 2>/dev/null || true
     fi
-    echo "→ [$stamp] [$current/$total] Converting: $name_in → $name_out" | tee -a "$LOG_FILE"
+    echo "$S_ARROW [$stamp] [$current/$total] Converting: $in_abs → $out_abs" | tee -a "$LOG_FILE"
   else
-    echo "→ [$stamp] Converting: $name_in → $name_out" | tee -a "$LOG_FILE"
+    echo "$S_ARROW [$stamp] Converting: $in_abs → $out_abs" | tee -a "$LOG_FILE"
   fi
-
-  # Do the actual conversion
   local err
   if [ "$target_ext" = "gif" ]; then
-    # For GIF: optimize with reduced colors and dithering
     if err=$("$IM_CMD" "$in" -coalesce -strip -colors 256 -dither FloydSteinberg -layers OptimizeFrame "$out" 2>&1); then :; else
-      echo "✗ [$stamp] ERROR during conversion: $name_in" | tee -a "$LOG_FILE" >&2
+      echo "$S_ERR [$stamp] ERROR during conversion: $in_abs → $out_abs" | tee -a "$LOG_FILE" >&2
       echo "   Details: $err" | tee -a "$LOG_FILE" >&2
-      # Enhanced error diagnostics
-      if echo "$err" | grep -qi "permission denied"; then
-        echo "   Likely cause: Insufficient permissions for $in or $out" | tee -a "$LOG_FILE" >&2
-      elif echo "$err" | grep -qi "no space"; then
-        echo "   Likely cause: Disk full" | tee -a "$LOG_FILE" >&2
-      elif echo "$err" | grep -qi "unable to open"; then
-        echo "   Likely cause: File not readable or corrupted" | tee -a "$LOG_FILE" >&2
-      fi
       echo 1 >>"$FAIL_FILE"; return 1
     fi
   elif [ "$target_ext" = "png" ]; then
-    # For PNG: use ZIP compression, strip metadata
     if err=$("$IM_CMD" "$in" -strip -define png:compression-level=9 -define png:compression-filter=5 "$out" 2>&1); then :; else
-      echo "✗ [$stamp] ERROR during conversion: $name_in" | tee -a "$LOG_FILE" >&2
+      echo "$S_ERR [$stamp] ERROR during conversion: $in_abs → $out_abs" | tee -a "$LOG_FILE" >&2
       echo "   Details: $err" | tee -a "$LOG_FILE" >&2
-      # Enhanced error diagnostics
-      if echo "$err" | grep -qi "permission denied"; then
-        echo "   Likely cause: Insufficient permissions for $in or $out" | tee -a "$LOG_FILE" >&2
-      elif echo "$err" | grep -qi "no space"; then
-        echo "   Likely cause: Disk full" | tee -a "$LOG_FILE" >&2
-      elif echo "$err" | grep -qi "unable to open"; then
-        echo "   Likely cause: File not readable or corrupted" | tee -a "$LOG_FILE" >&2
-      fi
       echo 1 >>"$FAIL_FILE"; return 1
     fi
   else
-    # For JPEG: include auto-orient
     if err=$("$IM_CMD" "$in" -auto-orient -strip -quality "${QUALITY}" "$out" 2>&1); then :; else
-      echo "✗ [$stamp] ERROR during conversion: $name_in" | tee -a "$LOG_FILE" >&2
+      echo "$S_ERR [$stamp] ERROR during conversion: $in_abs → $out_abs" | tee -a "$LOG_FILE" >&2
       echo "   Details: $err" | tee -a "$LOG_FILE" >&2
-      # Enhanced error diagnostics
-      if echo "$err" | grep -qi "permission denied"; then
-        echo "   Likely cause: Insufficient permissions for $in or $out" | tee -a "$LOG_FILE" >&2
-      elif echo "$err" | grep -qi "no space"; then
-        echo "   Likely cause: Disk full" | tee -a "$LOG_FILE" >&2
-      elif echo "$err" | grep -qi "unable to open"; then
-        echo "   Likely cause: File not readable or corrupted" | tee -a "$LOG_FILE" >&2
-      fi
       echo 1 >>"$FAIL_FILE"; return 1
     fi
   fi
-
-  # Sanity check
-  if [ ! -f "$out" ]; then
-    echo "✗ [$stamp] ERROR: $name_in → $name_out (no output created)" | tee -a "$LOG_FILE" >&2
+  if ! is_valid_image "$out" "$target_ext"; then
+    echo "$S_ERR [$stamp] ERROR: invalid output produced: $in_abs → $out_abs" | tee -a "$LOG_FILE" >&2
+    rm -f "$out"
     echo 1 >>"$FAIL_FILE"; return 1
   fi
-
-  # Stats
   local in_b out_b in_h out_h delta
   in_b="$(filesize_bytes "$in")"; out_b="$(filesize_bytes "$out")"
   in_h="$(format_size "$in_b")"; out_h="$(format_size "$out_b")"
@@ -364,36 +405,36 @@ convert_file() {
   else
     delta="N/A"
   fi
-
-  echo "✓ [$stamp] Success: $name_in → $name_out ($in_h → $out_h, $delta)" | tee -a "$LOG_FILE"
-
+  echo "$S_OK [$stamp] Success: $in_abs → $out_abs ($in_h → $out_h, $delta)" | tee -a "$LOG_FILE"
   if [ "$DELETE_ORIGINAL" = "1" ]; then
     rm -f -- "$in"
-    echo "  🗑️  Deleted: $name_in" | tee -a "$LOG_FILE"
+    echo "  ${S_BIN}Deleted: $in_abs" | tee -a "$LOG_FILE"
   fi
 }
-export -f convert_file is_animated_webp has_alpha decide_target_ext
+export -f convert_file is_animated_webp has_alpha can_read_image is_valid_image decide_target_ext
 
 # ------------------------------- Run -----------------------------------------
 echo "Found $total .webp files. Parallel: $nproc_cmd"
-echo "Using: $IM_CMD | QUALITY=$QUALITY | DELETE_ORIGINAL=$DELETE_ORIGINAL"
+echo "Using: $IM_CMD | QUALITY=$QUALITY | DELETE_ORIGINAL=$DELETE_ORIGINAL | EMOJI=$EMOJI"
 [ "$use_pv" = "1" ] && echo "Progress: pv" || { [ "$use_simple_progress" = "1" ] && echo "Progress: simple"; }
 echo
 
 if [ "$use_pv" = "1" ]; then
   find . $find_depth -type f -iname '*.webp' -print0 \
-  | pv -0lps "$total" -N "Converting" \
-  | xargs -0 -n 1 -P "$nproc_cmd" -I {} bash -c 'convert_file "$@"' _ {}
+  | xargs -0 -n 1 -I {} bash -c 'abspath "$1"' _ {} \
+  | pv -lps "$total" -N "Converting" \
+  | xargs -n 1 -P "$nproc_cmd" -I {} bash -c 'convert_file "$1"' _ {}
 else
   find . $find_depth -type f -iname '*.webp' -print0 \
-  | xargs -0 -n 1 -P "$nproc_cmd" -I {} bash -c 'convert_file "$@"' _ {}
+  | xargs -0 -n 1 -I {} bash -c 'abspath "$1"' _ {} \
+  | xargs -n 1 -P "$nproc_cmd" -I {} bash -c 'convert_file "$1"' _ {}
 fi
 
 echo | tee -a "$LOG_FILE"
 echo "---" | tee -a "$LOG_FILE"
-success="$(grep -cE '^✓ .* Success:' "$LOG_FILE" || true)"
-skipped="$(grep -cE '^⊘ .* Skipped:' "$LOG_FILE" || true)"
-errors="$(grep -cE '^✗ .* ERROR' "$LOG_FILE" || true)"
+success="$(grep -cE "^(✓|\[OK\]) .* Success:" "$LOG_FILE" || true)"
+skipped="$(grep -cE "^(⊘|\[SKIP\]) .* Skipped:" "$LOG_FILE" || true)"
+errors="$(grep -cE "^(✗|\[ERR\]) .* ERROR" "$LOG_FILE" || true)"
 echo "=== REPORT ==="                  | tee -a "$LOG_FILE"
 echo "Converted successfully: $success" | tee -a "$LOG_FILE"
 echo "Skipped (exists):      $skipped" | tee -a "$LOG_FILE"
