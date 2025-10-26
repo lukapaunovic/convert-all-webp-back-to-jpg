@@ -83,6 +83,8 @@ Run the script in the target directory:
 Examples:
 ```console
   ./convert.sh
+```
+```console
   QUALITY=95 ./convert.sh /path/to/images
   DELETE_ORIGINAL=1 ./convert.sh --progress pv
 ```
