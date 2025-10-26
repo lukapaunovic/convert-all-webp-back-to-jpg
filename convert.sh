@@ -319,41 +319,50 @@ decide_target_ext() {
   local file; file="$(basename -- "$stem")"
   local ext_lc="${file##*.}"; ext_lc="$(printf '%s' "$ext_lc" | tr '[:upper:]' '[:lower:]')"
 
+  # Ako identify ne uspe, detekcija alfe rešava PNG; u suprotnom JPG.
   if [ "$(is_animated_webp "$in")" = "yes" ] || [ "$ext_lc" = "gif" ]; then
-    echo "gif"
-  elif [ "$ext_lc" = "png" ] || [ "$(has_alpha "$in")" = "yes" ]; then
-    echo "png"
-  else
-    echo "jpg"
+    echo "gif"; return
   fi
+  if [ "$ext_lc" = "png" ] || [ "$(has_alpha "$in")" = "yes" ]; then
+    echo "png"; return
+  fi
+  echo "jpg"
 }
+
 
 
 # ----------------------------- Conversion ------------------------------------
 convert_file() {
   local in="$1"
   local stamp; stamp="$(now)"
-  local stem="${in%.[Ww][Ee][Bb][Pp]}"     # npr: /a/b/photo.gif.webp -> /a/b/photo.gif
+
+  # 1) Ulaz čitljiv?
+  if ! can_read_image "$in"; then
+    echo "$S_ERR [$stamp] ERROR: unreadable or corrupt input: $in" | tee -a "$LOG_FILE" >&2
+    echo 1 >>"$FAIL_FILE"; return 1
+  fi
+
+  # 2) Odredi TARGET EXT prvo (sa fallback-om)
+  local target_ext; target_ext="$(decide_target_ext "$in")"
+  case "$target_ext" in
+    gif|png|jpg) : ;;
+    ""|*) target_ext="jpg" ;;  # Fallback; nikad bez ekstenzije
+  esac
+
+  # 3) Izgradi izlaz bez seckanja putanje
+  local stem="${in%.[Ww][Ee][Bb][Pp]}"     # /a/b/photo.gif.webp -> /a/b/photo.gif
   local dir;  dir="$(dirname -- "$stem")"
   local file; file="$(basename -- "$stem")"
 
-  # Ako je original imao "duplu" ekstenziju (.gif.webp / .png.webp / .jpeg.webp / .jpg.webp),
-  # skini samo tu poslednju "pre-webp" ekstenziju sa IMENA fajla (ne sa cele putanje).
+  # Skini samo “pre-webp” ekstenziju iz imena fajla (ne iz foldera)
   case "${file,,}" in
-    *.gif|*.png|*.jpg|*.jpeg)
-      file="${file%.*}"
-      ;;
+    *.gif|*.png|*.jpg|*.jpeg) file="${file%.*}" ;;
   esac
 
   local out="${dir}/${file}.${target_ext}"
-  if [ -z "$out" ] || [ "$out" = ".${target_ext}" ]; then
-    echo "$S_ERR [$stamp] ERROR: Invalid output filename for $in (got $out)" | tee -a "$LOG_FILE" >&2
-    echo 1 >>"$FAIL_FILE"; return 1
-  fi
-  local in_abs out_abs
-  in_abs="$in"; out_abs="$(abspath "$out")"
+
+  # 4) Ako već postoji, preskoči
   if [ -f "$out" ] || [ -d "$out" ]; then
-    echo "$S_SKIP [$stamp] Skipped: $in_abs (exists as $out_abs)" | tee -a "$LOG_FILE" >&2
     if [ "${use_simple_progress:-0}" = "1" ]; then
       if [ "${HAS_FLOCK}" = "1" ]; then
         flock "$PROGRESS_LOCK" bash -c 'echo $(($(cat "$PROGRESS_FILE")+1)) >"$PROGRESS_FILE"'
@@ -361,8 +370,11 @@ convert_file() {
         echo $(($(cat "$PROGRESS_FILE")+1)) >"$PROGRESS_FILE" 2>/dev/null || true
       fi
     fi
+    echo "$S_SKIP [$stamp] Skipped: $(abspath "$in") (exists as $(abspath "$out"))" | tee -a "$LOG_FILE" >&2
     return 0
   fi
+
+  # 5) Log progres
   if [ "${use_simple_progress:-0}" = "1" ]; then
     local current
     if [ "${HAS_FLOCK}" = "1" ]; then
@@ -370,35 +382,45 @@ convert_file() {
     else
       current=$(($(cat "$PROGRESS_FILE")+1)); echo "$current" >"$PROGRESS_FILE" 2>/dev/null || true
     fi
-    echo "$S_ARROW [$stamp] [$current/$total] Converting: $in_abs → $out_abs" | tee -a "$LOG_FILE"
+    echo "$S_ARROW [$stamp] [$current/$total] Converting: $(abspath "$in") → $(abspath "$out")" | tee -a "$LOG_FILE"
   else
-    echo "$S_ARROW [$stamp] Converting: $in_abs → $out_abs" | tee -a "$LOG_FILE"
+    echo "$S_ARROW [$stamp] Converting: $(abspath "$in") → $(abspath "$out")" | tee -a "$LOG_FILE"
   fi
+
+  # 6) Konverzija
   local err
-  if [ "$target_ext" = "gif" ]; then
-    if err=$("$IM_CMD" "$in" -coalesce -strip -colors 256 -dither FloydSteinberg -layers OptimizeFrame "$out" 2>&1); then :; else
-      echo "$S_ERR [$stamp] ERROR during conversion: $in_abs → $out_abs" | tee -a "$LOG_FILE" >&2
-      echo "   Details: $err" | tee -a "$LOG_FILE" >&2
-      echo 1 >>"$FAIL_FILE"; return 1
-    fi
-  elif [ "$target_ext" = "png" ]; then
-    if err=$("$IM_CMD" "$in" -strip -define png:compression-level=9 -define png:compression-filter=5 "$out" 2>&1); then :; else
-      echo "$S_ERR [$stamp] ERROR during conversion: $in_abs → $out_abs" | tee -a "$LOG_FILE" >&2
-      echo "   Details: $err" | tee -a "$LOG_FILE" >&2
-      echo 1 >>"$FAIL_FILE"; return 1
-    fi
-  else
-    if err=$("$IM_CMD" "$in" -auto-orient -strip -quality "${QUALITY}" "$out" 2>&1); then :; else
-      echo "$S_ERR [$stamp] ERROR during conversion: $in_abs → $out_abs" | tee -a "$LOG_FILE" >&2
-      echo "   Details: $err" | tee -a "$LOG_FILE" >&2
-      echo 1 >>"$FAIL_FILE"; return 1
-    fi
-  fi
+  case "$target_ext" in
+    gif)
+      if err=$("$IM_CMD" "$in" -coalesce -strip -colors 256 -dither FloydSteinberg -layers OptimizeFrame "$out" 2>&1); then :; else
+        echo "$S_ERR [$stamp] ERROR during conversion: $(abspath "$in") → $(abspath "$out")" | tee -a "$LOG_FILE" >&2
+        echo "   Details: $err" | tee -a "$LOG_FILE" >&2
+        echo 1 >>"$FAIL_FILE"; return 1
+      fi
+      ;;
+    png)
+      if err=$("$IM_CMD" "$in" -strip -define png:compression-level=9 -define png:compression-filter=5 "$out" 2>&1); then :; else
+        echo "$S_ERR [$stamp] ERROR during conversion: $(abspath "$in") → $(abspath "$out")" | tee -a "$LOG_FILE" >&2
+        echo "   Details: $err" | tee -a "$LOG_FILE" >&2
+        echo 1 >>"$FAIL_FILE"; return 1
+      fi
+      ;;
+    jpg)
+      if err=$("$IM_CMD" "$in" -auto-orient -strip -quality "${QUALITY}" "$out" 2>&1); then :; else
+        echo "$S_ERR [$stamp] ERROR during conversion: $(abspath "$in") → $(abspath "$out")" | tee -a "$LOG_FILE" >&2
+        echo "   Details: $err" | tee -a "$LOG_FILE" >&2
+        echo 1 >>"$FAIL_FILE"; return 1
+      fi
+      ;;
+  esac
+
+  # 7) Validacija output-a
   if ! is_valid_image "$out" "$target_ext"; then
-    echo "$S_ERR [$stamp] ERROR: invalid output produced: $in_abs → $out_abs" | tee -a "$LOG_FILE" >&2
+    echo "$S_ERR [$stamp] ERROR: invalid output produced: $(abspath "$in") → $(abspath "$out")" | tee -a "$LOG_FILE" >&2
     rm -f "$out"
     echo 1 >>"$FAIL_FILE"; return 1
   fi
+
+  # 8) Statistika i brisanje originala
   local in_b out_b in_h out_h delta
   in_b="$(filesize_bytes "$in")"; out_b="$(filesize_bytes "$out")"
   in_h="$(format_size "$in_b")"; out_h="$(format_size "$out_b")"
@@ -408,12 +430,14 @@ convert_file() {
   else
     delta="N/A"
   fi
-  echo "$S_OK [$stamp] Success: $in_abs → $out_abs ($in_h → $out_h, $delta)" | tee -a "$LOG_FILE"
+  echo "$S_OK [$stamp] Success: $(abspath "$in") → $(abspath "$out") ($in_h → $out_h, $delta)" | tee -a "$LOG_FILE"
+
   if [ "$DELETE_ORIGINAL" = "1" ]; then
     rm -f -- "$in"
-    echo "  ${S_BIN}Deleted: $in_abs" | tee -a "$LOG_FILE"
+    echo "  ${S_BIN}Deleted: $(abspath "$in")" | tee -a "$LOG_FILE"
   fi
 }
+
 export -f convert_file is_animated_webp has_alpha can_read_image is_valid_image decide_target_ext
 
 # ------------------------------- Run -----------------------------------------
