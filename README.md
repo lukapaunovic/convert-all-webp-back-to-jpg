@@ -45,7 +45,7 @@ git clone https://github.com/lukapaunovic/convert-all-webp-back-to-jpg.git
 cd convert-all-webp-back-to-jpg
 chmod +x convert.sh
 
-Edit convert.sh with desired variables.
+#Edit convert.sh with desired variables.
 
 Run ./convert.sh
 
