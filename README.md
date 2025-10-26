@@ -40,6 +40,6 @@ Although `.webp` can reduce file size, it frequently introduces several problems
 
 ```bash
 sudo apt install imagemagick -y
+cd wp-content/uploads
 git clone https://github.com/lukapaunovic/convert-all-webp-back-to-jpg.git
-cd webp-to-jpg
 chmod +x convert.sh
