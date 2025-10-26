@@ -320,15 +320,15 @@ decide_target_ext() {
   local file; file="$(basename -- "$stem")"
   local ext_lc="${file##*.}"; ext_lc="$(printf '%s' "$ext_lc" | tr '[:upper:]' '[:lower:]')"
 
-  # Ako identify ne uspe, detekcija alfe rešava PNG; u suprotnom JPG.
+  # Animirano ili u imenu već bilo .gif → GIF
   if [ "$(is_animated_webp "$in")" = "yes" ] || [ "$ext_lc" = "gif" ]; then
     echo "gif"; return
   fi
-  if [ "$ext_lc" = "png" ] || [ "$(has_alpha "$in")" = "yes" ]; then
-    echo "png"; return
-  fi
+
+  # Sve ostalo → JPG (bez PNG varijante)
   echo "jpg"
 }
+
 
 
 
@@ -413,12 +413,16 @@ convert_file() {
       fi
       ;;
     jpg)
-      out_uri="jpg:$out"
-      if err=$("$IM_CMD" "$in" -auto-orient -strip -quality "$QUALITY" "$out_uri" 2>&1); then :; else
-        echo "$S_ERR [$stamp] ERROR during conversion: $(abspath "$in") → $(abspath "$out")" | tee -a "$LOG_FILE" >&2
-        echo "   Details: $err" | tee -a "$LOG_FILE" >&2
-        echo 1 >>"$FAIL_FILE"; return 1
-      fi
+        out_uri="jpg:$out"
+        # Bela pozadina, ukloni alpha; bezbedno i kad nema alfe
+        if err=$("$IM_CMD" "$in" \
+          -auto-orient -strip \
+          -background white -alpha remove -alpha off \
+          -quality "$QUALITY" "$out_uri" 2>&1); then :; else
+          echo "$S_ERR [$stamp] ERROR during conversion: $(abspath "$in") → $(abspath "$out")" | tee -a "$LOG_FILE" >&2
+          echo "   Details: $err" | tee -a "$LOG_FILE" >&2
+          echo 1 >>"$FAIL_FILE"; return 1
+        fi
       ;;
   esac
 
