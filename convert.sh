@@ -392,29 +392,35 @@ convert_file() {
 
   # 6) Konverzija
   local err
+  # 6) Konverzija (forsiraj encoder prefiksom)
+  local err out_uri
   case "$target_ext" in
     gif)
-      if err=$("$IM_CMD" "$in" -coalesce -strip -colors 256 -dither FloydSteinberg -layers OptimizeFrame "$out" 2>&1); then :; else
+      out_uri="gif:$out"
+      if err=$("$IM_CMD" "$in" -coalesce -strip -colors 256 -dither FloydSteinberg -layers OptimizeFrame "$out_uri" 2>&1); then :; else
         echo "$S_ERR [$stamp] ERROR during conversion: $(abspath "$in") → $(abspath "$out")" | tee -a "$LOG_FILE" >&2
         echo "   Details: $err" | tee -a "$LOG_FILE" >&2
         echo 1 >>"$FAIL_FILE"; return 1
       fi
       ;;
     png)
-      if err=$("$IM_CMD" "$in" -strip -define png:compression-level=9 -define png:compression-filter=5 "$out" 2>&1); then :; else
+      out_uri="png:$out"
+      if err=$("$IM_CMD" "$in" -strip -define png:compression-level=9 -define png:compression-filter=5 "$out_uri" 2>&1); then :; else
         echo "$S_ERR [$stamp] ERROR during conversion: $(abspath "$in") → $(abspath "$out")" | tee -a "$LOG_FILE" >&2
         echo "   Details: $err" | tee -a "$LOG_FILE" >&2
         echo 1 >>"$FAIL_FILE"; return 1
       fi
       ;;
     jpg)
-      if err=$("$IM_CMD" "$in" -auto-orient -strip -quality "${QUALITY}" "$out" 2>&1); then :; else
+      out_uri="jpg:$out"
+      if err=$("$IM_CMD" "$in" -auto-orient -strip -quality "$QUALITY" "$out_uri" 2>&1); then :; else
         echo "$S_ERR [$stamp] ERROR during conversion: $(abspath "$in") → $(abspath "$out")" | tee -a "$LOG_FILE" >&2
         echo "   Details: $err" | tee -a "$LOG_FILE" >&2
         echo 1 >>"$FAIL_FILE"; return 1
       fi
       ;;
   esac
+
 
   # 7) Validacija output-a
   if ! is_valid_image "$out" "$target_ext"; then
