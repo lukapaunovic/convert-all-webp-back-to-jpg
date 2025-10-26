@@ -315,8 +315,9 @@ is_animated_webp() {
 
 decide_target_ext() {
   local in="$1"
-  local stem="${in%.[Ww][Ee][Bb][Pp]}"   # e.g. photo.gif.webp -> photo.gif
-  local ext_lc="${stem##*.}"; ext_lc="$(printf '%s' "$ext_lc" | tr '[:upper:]' '[:lower:]')"
+  local stem="${in%.[Ww][Ee][Bb][Pp]}"
+  local file; file="$(basename -- "$stem")"
+  local ext_lc="${file##*.}"; ext_lc="$(printf '%s' "$ext_lc" | tr '[:upper:]' '[:lower:]')"
 
   if [ "$(is_animated_webp "$in")" = "yes" ] || [ "$ext_lc" = "gif" ]; then
     echo "gif"
@@ -327,22 +328,24 @@ decide_target_ext() {
   fi
 }
 
+
 # ----------------------------- Conversion ------------------------------------
 convert_file() {
   local in="$1"
   local stamp; stamp="$(now)"
-  local stem="${in%.[Ww][Ee][Bb][Pp]}"     # e.g. photo.webp -> photo
-  local base="${stem%.*}"                  # e.g. photo.gif -> photo
-  if ! can_read_image "$in"; then
-    echo "$S_ERR [$stamp] ERROR: unreadable or corrupt input: $in" | tee -a "$LOG_FILE" >&2
-    echo 1 >>"$FAIL_FILE"; return 1
-  fi
-  local target_ext; target_ext="$(decide_target_ext "$in")"
-  if [ -z "$target_ext" ] || [[ ! "$target_ext" =~ ^(gif|png|jpg)$ ]]; then
-    echo "$S_ERR [$stamp] ERROR: Invalid target extension for $in (got $target_ext)" | tee -a "$LOG_FILE" >&2
-    echo 1 >>"$FAIL_FILE"; return 1
-  fi
-  local out="${base}.${target_ext}"
+  local stem="${in%.[Ww][Ee][Bb][Pp]}"     # npr: /a/b/photo.gif.webp -> /a/b/photo.gif
+  local dir;  dir="$(dirname -- "$stem")"
+  local file; file="$(basename -- "$stem")"
+
+  # Ako je original imao "duplu" ekstenziju (.gif.webp / .png.webp / .jpeg.webp / .jpg.webp),
+  # skini samo tu poslednju "pre-webp" ekstenziju sa IMENA fajla (ne sa cele putanje).
+  case "${file,,}" in
+    *.gif|*.png|*.jpg|*.jpeg)
+      file="${file%.*}"
+      ;;
+  esac
+
+  local out="${dir}/${file}.${target_ext}"
   if [ -z "$out" ] || [ "$out" = ".${target_ext}" ]; then
     echo "$S_ERR [$stamp] ERROR: Invalid output filename for $in (got $out)" | tee -a "$LOG_FILE" >&2
     echo 1 >>"$FAIL_FILE"; return 1
