@@ -59,7 +59,7 @@ find . -type f -iname "*.webp" -print0 \
 | xargs -0 -n 1 -P "$nproc_cmd" bash -c '
   in="$1"
   # Just remove .webp extension - DO NOT ADD ANYTHING
-  out="${in%.[Ww][Ee][Bb][Pp]}"
+  out="${in%.[Ww][Ee][Bb][Pp]}.jpg"
   basename="${in##*/}"
   timestamp=$(date "+%Y-%m-%d %H:%M:%S")
   
@@ -74,7 +74,7 @@ find . -type f -iname "*.webp" -print0 \
   echo "→ [$timestamp] Converting: $in" | tee -a "$LOG_FILE"
   
   # Try conversion and capture errors
-  if error_output=$($IM_CMD "$in" -strip -quality 90 "$out" 2>&1); then
+  if error_output=$($IM_CMD "$in" -strip -quality 90 "jpeg:$out" 2>&1); then
     # Use stat for faster file size reading
     if command -v stat >/dev/null 2>&1; then
       # GNU stat
