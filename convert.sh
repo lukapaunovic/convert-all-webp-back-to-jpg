@@ -4,8 +4,8 @@ set -euo pipefail
 # =============================================================================
 # WebP to JPEG Converter - Production Edition
 # =============================================================================
-# Usage: ./webp_to_jpg.sh [directory]
-#        QUALITY=95 DELETE_ORIGINAL=1 ./webp_to_jpg.sh
+# Usage: ./convert.sh [directory] or
+#        QUALITY=95 DELETE_ORIGINAL=1 ./convert.sh [directory]
 # Author: @lukapaunovic
 # =============================================================================
 
