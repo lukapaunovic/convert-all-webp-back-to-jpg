@@ -139,6 +139,7 @@ if ! "$IM_CMD" -version 2>/dev/null | grep -Eiq 'webp'; then
   echo "This ImageMagick build lacks WebP support." >&2
   exit 1
 fi
+export QUALITY
 
 # Validate quality
 [[ "$QUALITY" =~ ^[0-9]+$ ]] && [ "$QUALITY" -ge 1 ] && [ "$QUALITY" -le 100 ] || {
