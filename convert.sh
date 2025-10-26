@@ -146,6 +146,7 @@ if ! [[ "$QUALITY" =~ ^[0-9]+$ ]] || [ "$QUALITY" -lt 1 ] || [ "$QUALITY" -gt 10
   echo "Error: QUALITY must be between 1 and 100 (got: $QUALITY)" >&2
   exit 1
 fi
+export QUALITY DELETE_ORIGINAL
 
 # --- Validate progress mode --------------------------------------------------
 if [[ ! "$PROGRESS_MODE" =~ ^(auto|pv|simple|none)$ ]]; then
@@ -254,6 +255,7 @@ echo ""
 ts="$(date +%Y%m%d_%H%M%S)"
 LOG_FILE="$(mktemp "webp_to_jpg_${ts}_XXXX.log")"
 export LOG_FILE
+
 
 {
   echo "=== WEBP → JPG Conversion ==="
