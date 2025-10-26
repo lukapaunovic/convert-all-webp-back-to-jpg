@@ -53,17 +53,20 @@ Prerequisites:
   - wp-cli: For WordPress database updates (if used in a WordPress environment).
 
 Install on Debian/Ubuntu:
+```console
   sudo apt update
   sudo apt install imagemagick pv -y
+```
 
 Setup:
 1. Clone the repository and set up the script:
+```console
    cd wp-content/uploads
    git clone https://github.com/lukapaunovic/convert-all-webp-back-to-jpg.git
    cd convert-all-webp-back-to-jpg
    chmod +x convert.sh
-
-2. (Optional) Edit convert.sh to set custom variables, e.g.:
+```
+3. (Optional) Edit convert.sh to set custom variables, e.g.:
    - QUALITY=95: JPEG quality (1–100, default 90).
    - PARALLEL=4: Number of parallel jobs (default: auto-detected CPU cores).
    - DELETE_ORIGINAL=1: Delete original .webp files after successful conversion.
@@ -74,13 +77,15 @@ Usage
 -----
 
 Run the script in the target directory:
+```console
   ./convert.sh [directory]
-
+```
 Examples:
+```console
   ./convert.sh
   QUALITY=95 ./convert.sh /path/to/images
   DELETE_ORIGINAL=1 ./convert.sh --progress pv
-
+```
 Options:
   -h, --help              Show help
   -q, --quality NUM       JPEG quality (1–100, default 90)
@@ -95,13 +100,13 @@ WordPress Database Update
 -------------------------
 
 To update file references in the WordPress database to match the script's output, run the following wp-cli commands as the site user (or use sudo -H -u www-data if needed, replacing www-data with your web server user):
-
+```console
   wp search-replace --regex '(?i)\.gif\.webp' '.gif' --all-tables --report-changed-only
   wp search-replace --regex '(?i)\.png\.webp' '.png' --all-tables --report-changed-only
   wp search-replace --regex '(?i)\.jpg\.webp' '.jpg' --all-tables --report-changed-only
   wp search-replace --regex '(?i)\.jpeg\.webp' '.jpg' --all-tables --report-changed-only
   wp search-replace --regex '(?i)\.webp' '.jpg' --all-tables --report-changed-only
-
+```
 These commands replace case-insensitive .gif.webp, .png.webp, .jpg.webp, .jpeg.webp, and .webp extensions with .gif, .png, or .jpg in the database.
 
 Notes:
